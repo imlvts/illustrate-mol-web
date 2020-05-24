@@ -7,7 +7,8 @@ import {postProcessShader} from './shaders/post-process';
 import {progressShader} from './shaders/progress';
 import {textureShader} from './shaders/texture';
 import {getSupportedWebGLVersion, Context} from './glutil';
-import {coords as sphereCoords, idx as sphereIdx} from './sphere-data';
+import {coords as sphereCoords, idx as sphereIdx} from './sphere-data-hq';
+import {loadPdb, findAtomGroup} from './pdb.js';
 
 const IFIELDS = 9;
 
@@ -63,10 +64,10 @@ const makeInstanceData = function() {
     const count = 5000;
     const instanceData = new Float32Array(count * IFIELDS);
     const intView = new Uint32Array(instanceData.buffer);
-    const r = ()=>Math.random() * 2 - 1;
-    const r2 = ()=>Math.random();
+    const r2 = () => Math.random() * 2 - 1;
+    const r = () => Math.random();
     for (let i = 0; i < count; i++) {
-        const instance = [r(), r(), r()*0.7, 0.03, 0.5, 0.5, 0.5];
+        const instance = [r2()*32, r2()*32, r2()*32*0.7, 1.6, 0.5, 0.5, 0.5];
         const groupIndex = [i, i];
         instanceData.set(instance, i*IFIELDS);
         intView.set(groupIndex, i*IFIELDS+instance.length);
@@ -82,7 +83,9 @@ let canvas = null;
 let sphereBuf = null;
 
 const passes = ['color', 'depth', 'index', 'group'];
+const start = +new Date();
 const draw = function() {
+    const time = +new Date() - start;
     const {gl} = ctx;
     const width = canvas.width;
     const height = canvas.height;
@@ -105,6 +108,7 @@ const draw = function() {
             gl.clear(gl.COLOR_BUFFER_BIT);
         }
         ctx.useShader(pass);
+        ctx.setUniform('uTime', time);
         drawSpheres();
         ctx.useShader(null);
     }
@@ -128,6 +132,7 @@ const textureBinds = [
    ['color', 'uColor'], ['depth', 'uDepth'],
    ['group', 'uGroup'], ['index', 'uIndex'],
 ];
+
 const postProcess = function() {
     const {gl, textures} = ctx;
     const {viewPortQuad} = ctx.buffers;
@@ -197,6 +202,59 @@ const init = function() {
     sphereBuf = makeSphereIndexedVbo(ctx.gl, makeInstanceData());
     console.log('gl initialized:', ctx);
     rafLoop();
+
+    loadData();
+};
+const onProgress = function() {};
+const atomGroups = [
+    ['HETATM', '-----HOH--', [0,9999], [0.5,0.5,0.5], 0.0],
+    ['ATOM',   '-H--------', [0,9999], [0.5,0.5,0.5], 0.0],
+    ['ATOM',   'H---------', [0,9999], [0.5,0.5,0.5], 0.0],
+    ['ATOM',   '-C-------A', [0,9999], [1.0,0.6,0.6], 1.6],
+    ['ATOM',   '-S-------A', [0,9999], [1.0,0.5,0.5], 1.8],
+    ['ATOM',   '---------A', [0,9999], [1.0,0.5,0.5], 1.5],
+    ['ATOM',   '-C-------C', [0,9999], [1.0,0.6,0.6], 1.6],
+    ['ATOM',   '-S-------C', [0,9999], [1.0,0.5,0.5], 1.8],
+    ['ATOM',   '---------C', [0,9999], [1.0,0.5,0.5], 1.5],
+    ['ATOM',   '-C--------', [0,9999], [1.0,0.8,0.6], 1.6],
+    ['ATOM',   '-S--------', [0,9999], [1.0,0.7,0.5], 1.8],
+    ['ATOM',   '----------', [0,9999], [1.0,0.7,0.5], 1.5],
+    ['HETATM', 'FE---HEM--', [0,9999], [1.0,0.8,0.0], 1.8],
+    ['HETATM', '-C---HEM--', [0,9999], [1.0,0.3,0.3], 1.6],
+    ['HETATM', '-----HEM--', [0,9999], [1.0,0.1,0.1], 1.5],
+].map((group, idx) => {
+    const [kind, descriptorStr, [low, high], [r, g, b], radius] = group;
+    const descriptor = new RegExp(descriptorStr.replace(/-/g, '.'));
+    return {kind, descriptor, idx, index: {low, high}, color: {r,g,b}, radius};
+});
+
+const loadData = async function() {
+    const data = await loadPdb('2hhb.pdb', onProgress);
+    const count = data.atoms.length;
+    const instanceData = new Float32Array(count * IFIELDS);
+    const intView = new Uint32Array(instanceData.buffer);
+    let subunits = 0;
+    let prevChain;
+    for (let i = 0; i < count; i++) {
+        const atom = data.atoms[i];
+        const {pos} = atom;
+        const group = findAtomGroup(atomGroups, atom);
+        if (!group) { continue }
+        const {radius, color} = group;
+        const instance = [
+           pos.x, pos.y, pos.z, radius,
+           color.r, color.g, color.b
+        ];
+        const groupIndex = [i, subunits];
+        instanceData.set(instance, i*IFIELDS);
+        intView.set(groupIndex, i*IFIELDS+instance.length);
+
+        if (atom.chain !== prevChain) {
+            subunits += 1;
+        }
+        prevChain = atom.chain;
+    }
+    sphereBuf = makeSphereIndexedVbo(ctx.gl, instanceData);
 };
 
 window.addEventListener('load', init);

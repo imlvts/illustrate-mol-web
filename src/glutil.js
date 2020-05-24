@@ -154,6 +154,7 @@ export class Context {
         // needs to be sent with instanced rendering.
         this.instanceExt = gl.getExtension('ANGLE_instanced_arrays');
         this.depthExt = gl.getExtension('WEBGL_depth_texture');
+        this.drawBuffersExt = gl.getExtension('WEBGL_draw_buffers');
 
         this.frameBuffer = gl.createFramebuffer();
         this.renderBuffer = gl.createRenderbuffer();
@@ -264,21 +265,19 @@ export class Context {
         }
     }
 
-    bindDrawToTexture (name) {
+    bindDrawToTexture (...names) {
         const {gl, frameBuffer, renderBuffer, width, height} = this;
-        const texture = this.textures[name];
 
-        gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuffer);
-        //gl.bindRenderbuffer(gl.RENDERBUFFER, renderBuffer);
-        //gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+        for (var i = 0; i < names.length; i++) {
+            const texture = this.textures[names[i]];
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, texture, 0);
+        }
 
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.textures.rawDepth, 0);
-        //gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderBuffer);
 
         gl.bindTexture(gl.TEXTURE_2D, null);
-        //gl.bindRenderbuffer(gl.RENDERBUFFER, null);
     }
 
     drawTexture(texture, alpha=1) {

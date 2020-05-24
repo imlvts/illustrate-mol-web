@@ -1,4 +1,4 @@
-name= 'icosphere-ascii.stl'
+name= 'icosphere-subdivided-ascii.stl'
 with open(name, 'r') as fd:
     lines = fd.read().splitlines()
 
