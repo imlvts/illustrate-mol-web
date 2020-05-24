@@ -1,0 +1,15 @@
+{
+  "name": "illustrate-mol",
+  "version": "0.0.1",
+  "description": "illustrate pdb data using webgl",
+  "main": "index.js",
+  "scripts": {
+    "build": "rollup src/index.js --file dist/index.js --format iife",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "rollup": "^2.10.9"
+  }
+}
