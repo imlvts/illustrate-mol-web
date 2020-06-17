@@ -152,13 +152,26 @@ export class Context {
         // ANGLE_instanced_arrays allows instanced drawing, which helps with
         // the amount of data sent to the GPU.  Only one copy of sphere geometry
         // needs to be sent with instanced rendering.
-        this.instanceExt = gl.getExtension('ANGLE_instanced_arrays');
-        this.depthExt = gl.getExtension('WEBGL_depth_texture');
-        this.drawBuffersExt = gl.getExtension('WEBGL_draw_buffers');
+        this.instanceExt = this.assertExt('ANGLE_instanced_arrays');
+        this.depthExt = this.assertExt('WEBGL_depth_texture');
+        // this.drawBuffersExt = gl.getExtension('WEBGL_draw_buffers');
+        // this.floatBufferExt = this.assertExt('WEBGL_color_buffer_float');
+        // required to create and render to float textures
+        this.floatTextureExt = this.assertExt('OES_texture_float');
+        // required to sample float texture
+        this.floatInterpExt = this.assertExt('OES_texture_float_linear');
 
         this.frameBuffer = gl.createFramebuffer();
         this.renderBuffer = gl.createRenderbuffer();
         this.buffers.viewPortQuad = makeViewPortSquad(gl);
+    }
+
+    assertExt(name) {
+        const ext = this.gl.getExtension(name);
+        if (!ext) {
+            throw new Error('cannot load extension: '+ name);
+        }
+        return ext;
     }
 
     /**
@@ -175,7 +188,11 @@ export class Context {
         if (location === -1 || typeof gl[fn] !== 'function') {
             throw new Error('uniform not found! ' + uniform);
         }
-        gl[fn](location, value);
+        if (fn.startsWith('uniformMatrix')) {
+            gl[fn](location, false, value);
+        } else {
+            gl[fn](location, value);
+        }
     }
 
     /**

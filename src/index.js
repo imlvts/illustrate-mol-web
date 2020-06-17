@@ -1,14 +1,13 @@
 'use strict';
 
-import {
-    depthShader, colorShader, groupShader, indexShader
-} from './shaders/initial';
+import {colorShader, layersShader} from './shaders/initial';
 import {postProcessShader} from './shaders/post-process';
 import {progressShader} from './shaders/progress';
 import {textureShader} from './shaders/texture';
 import {getSupportedWebGLVersion, Context} from './glutil';
 import {coords as sphereCoords, idx as sphereIdx} from './sphere-data-hq';
-import {loadPdb, findAtomGroup} from './pdb.js';
+import {loadPdb, findAtomGroup} from './pdb';
+import {Matrix4} from './matrix';
 
 const IFIELDS = 9;
 
@@ -61,7 +60,7 @@ const makeSphereIndexedVbo = function(gl, instances) {
 }
 
 const makeInstanceData = function() {
-    const count = 5000;
+    const count = 0;
     const instanceData = new Float32Array(count * IFIELDS);
     const intView = new Uint32Array(instanceData.buffer);
     const r2 = () => Math.random() * 2 - 1;
@@ -81,8 +80,11 @@ let progress = 0.0;
 let ctx = null;
 let canvas = null;
 let sphereBuf = null;
+let rotationMatrix = Matrix4.unit();
+let viewMatrix = Matrix4.unit();
+let zoomLevel = -3.7;
 
-const passes = ['color', 'depth', 'index', 'group'];
+const passes = ['color', 'layers'];
 const start = +new Date();
 const draw = function() {
     const time = +new Date() - start;
@@ -109,6 +111,7 @@ const draw = function() {
         }
         ctx.useShader(pass);
         ctx.setUniform('uTime', time);
+        ctx.setUniform('uViewMatrix', viewMatrix.data.flat());
         drawSpheres();
         ctx.useShader(null);
     }
@@ -129,8 +132,7 @@ const drawSpheres = function() {
 }
 
 const textureBinds = [
-   ['color', 'uColor'], ['depth', 'uDepth'],
-   ['group', 'uGroup'], ['index', 'uIndex'],
+   ['color', 'uColor'], ['layers', 'uLayers'],
 ];
 
 const postProcess = function() {
@@ -167,10 +169,85 @@ const postProcess = function() {
     ctx.useShader(null);
 };
 
+const updateViewMatrix = function () {
+    {
+        const {prevPos, curPos} = mouseInfo;
+        const delta = {
+            x: curPos.x - prevPos.x,
+            y: curPos.y - prevPos.y,
+        };
+        mouseInfo.prevPos = curPos;
+        const rotationScale = Math.PI * 4.0 / Math.max(canvas.width, canvas.height);
+        let mouseRotation;
+        if (mouseInfo.rotZ) {
+            mouseRotation = Matrix4.rotZ(delta.x * rotationScale);
+        } else {
+            mouseRotation = Matrix4.rotY(delta.x * rotationScale).mul(Matrix4.rotX(delta.y * rotationScale));
+        }
+        rotationMatrix = rotationMatrix.mul(mouseRotation);
+    }
+    {
+        zoomLevel += (mouseInfo.curMwheel - mouseInfo.prevMwheel) / -200.0;
+        mouseInfo.prevMwheel = mouseInfo.curMwheel;
+    }
+    const aspectMatrix = Matrix4.unit().aspect(canvas.width / canvas.height);
+    const scale = Math.exp(zoomLevel);
+    viewMatrix = rotationMatrix.mul(aspectMatrix).scale(scale);
+};
+
 const rafLoop = function() {
+    updateViewMatrix();
     draw();
     progress = (progress + 0.001) % 1;
     window.requestAnimationFrame(rafLoop);
+};
+
+const mouseInfo = {
+    shiftDown: false,
+    tracking: false,
+    rotZ: false,
+    prevPos: {x: 0, y: 0},
+    curPos: {x: 0, y: 0},
+    prevMwheel: 0,
+    curMwheel: 0,
+};
+
+const onMouseMove = (event) => {
+    if (mouseInfo.tracking) {
+        mouseInfo.curPos = {x: event.pageX, y: event.pageY};
+    }
+};
+const onMouseDown = (event) => {
+    mouseInfo.tracking = true;
+    mouseInfo.rotZ = mouseInfo.shiftDown;
+    mouseInfo.curPos = {x: event.pageX, y: event.pageY};
+    mouseInfo.prevPos = {x: event.pageX, y: event.pageY};
+};
+const onMouseUp = (event) => {
+    mouseInfo.tracking = false;
+    mouseInfo.rotZ = false;
+};
+const onMouseWheel = (event) => {
+    event.preventDefault();
+    mouseInfo.curMwheel += event.deltaY;
+};
+const onShiftDown = (event) => {
+    if (event.key !== 'Shift') { return; }
+    mouseInfo.shiftDown = true;
+}
+const onShiftUp = (event) => {
+    if (event.key !== 'Shift') { return; }
+    mouseInfo.shiftDown = false;
+}
+
+const initMouse = function(canvas) {
+    canvas.addEventListener('mousedown', onMouseDown);
+    canvas.addEventListener('wheel', onMouseWheel);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('mouseout', onMouseUp);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('keydown', onShiftDown);
+    window.addEventListener('keyup', onShiftUp);
 };
 
 const init = function() {
@@ -181,19 +258,19 @@ const init = function() {
         return;
     }
     canvas = document.getElementById('c');
+    canvas.width = window.innerWidth;
+    canvas.height = Math.min(window.innerHeight, window.innerWidth);
     ctx = new Context(canvas);
     const {gl} = ctx;
     ctx.loadShader('progress', progressShader);
     ctx.loadShader('color', colorShader);
-    ctx.loadShader('depth', depthShader);
-    ctx.loadShader('texture', textureShader);
-    ctx.loadShader('group', groupShader);
-    ctx.loadShader('index', indexShader);
+    ctx.loadShader('layers', layersShader);
     ctx.loadShader('post-process', postProcessShader);
     ctx.createTexture('color', canvas.width, canvas.height);
-    ctx.createTexture('depth', canvas.width, canvas.height);
-    ctx.createTexture('group', canvas.width, canvas.height);
-    ctx.createTexture('index', canvas.width, canvas.height);
+    ctx.createTexture('layers', canvas.width, canvas.height, {
+        interpolation: gl.NEAREST,
+        type: gl.FLOAT,
+    });
     ctx.createTexture('rawDepth', canvas.width, canvas.height, {
         internalFormat: gl.DEPTH_COMPONENT,
         format: gl.DEPTH_COMPONENT,
@@ -202,9 +279,11 @@ const init = function() {
     sphereBuf = makeSphereIndexedVbo(ctx.gl, makeInstanceData());
     console.log('gl initialized:', ctx);
     rafLoop();
+    initMouse(canvas);
 
     loadData();
 };
+
 const onProgress = function() {};
 const atomGroups = [
     ['HETATM', '-----HOH--', [0,9999], [0.5,0.5,0.5], 0.0],
@@ -222,6 +301,14 @@ const atomGroups = [
     ['HETATM', 'FE---HEM--', [0,9999], [1.0,0.8,0.0], 1.8],
     ['HETATM', '-C---HEM--', [0,9999], [1.0,0.3,0.3], 1.6],
     ['HETATM', '-----HEM--', [0,9999], [1.0,0.1,0.1], 1.5],
+//['HETATM', '-H--------', [0,9999], [1.1,1.1,1.1], 0.0],
+//['HETATM', 'H---------', [0,9999], [1.0,1.0,1.0], 0.0],
+//['ATOM',   '-H--------', [0,9999], [1.0,1.0,1.0], 0.0],
+//['ATOM',   'H---------', [0,9999], [1.0,1.0,1.0], 0.0],
+//['HETATM', '-----HOH--', [0,9999], [1.0,1.0,0.0], 0.0],
+//['ATOM',   '-----SER B', [3321,3330], [1.00, 0.00, 0.00], 1.6],
+//['ATOM',   '-----LEU B', [3463,3481], [0.83, 0.62, 0.00], 1.6],
+//['ATOM',   '-----LEU B', [3981,3999], [0.59, 0.83, 0.37], 1.6],
 ].map((group, idx) => {
     const [kind, descriptorStr, [low, high], [r, g, b], radius] = group;
     const descriptor = new RegExp(descriptorStr.replace(/-/g, '.'));
@@ -229,6 +316,7 @@ const atomGroups = [
 });
 
 const loadData = async function() {
+    //const data = await loadPdb('5oeb.pdb', onProgress);
     const data = await loadPdb('2hhb.pdb', onProgress);
     const count = data.atoms.length;
     const instanceData = new Float32Array(count * IFIELDS);
