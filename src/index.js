@@ -2,16 +2,19 @@
 
 import {colorShader, layersShader} from './shaders/initial';
 import {postProcessShader} from './shaders/post-process';
-import {progressShader} from './shaders/progress';
+// import {progressShader} from './shaders/progress';
 import {textureShader} from './shaders/texture';
 import {getSupportedWebGLVersion, Context} from './glutil';
-import {coords as sphereCoords, idx as sphereIdx} from './sphere-data-hq';
-import {loadPdb, findAtomGroup} from './pdb';
+import {MouseInput} from './mouse';
+import {coords, idx} from './sphere-data-hq';
+const sphereCoords = coords;
+const sphereIdx = idx;
+import {loadPdb, parsePdb, findAtomGroup} from './pdb';
 import {Matrix4} from './matrix';
 
 const IFIELDS = 9;
 
-const makeSphereIndexedVbo = function(gl, instances) {
+const makeSphereIndexedVbo = (gl, instances) => {
     if (!instances) {
         instances = [0.0, 0.0, 0.0, 0.5];
     }
@@ -59,7 +62,7 @@ const makeSphereIndexedVbo = function(gl, instances) {
     };
 }
 
-const makeInstanceData = function() {
+const makeInstanceData = () => {
     const count = 0;
     const instanceData = new Float32Array(count * IFIELDS);
     const intView = new Uint32Array(instanceData.buffer);
@@ -76,17 +79,18 @@ const makeInstanceData = function() {
 
 const defaultBackground = [0, 0, 0, 0];
 
-let progress = 0.0;
+// let progress = 0.0;
 let ctx = null;
 let canvas = null;
 let sphereBuf = null;
+let mouseInfo = null;
 let rotationMatrix = Matrix4.unit();
 let viewMatrix = Matrix4.unit();
 let zoomLevel = -3.7;
 
 const passes = ['color', 'layers'];
 const start = +new Date();
-const draw = function() {
+const draw = () => {
     const time = +new Date() - start;
     const {gl} = ctx;
     const width = canvas.width;
@@ -119,7 +123,7 @@ const draw = function() {
 
     postProcess();
 };
-const drawSpheres = function() {
+const drawSpheres = () => {
     const {gl} = ctx;
     gl.bindBuffer(gl.ARRAY_BUFFER, sphereBuf.vbo);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sphereBuf.ibo);
@@ -135,7 +139,7 @@ const textureBinds = [
    ['color', 'uColor'], ['layers', 'uLayers'],
 ];
 
-const postProcess = function() {
+const postProcess = () => {
     const {gl, textures} = ctx;
     const {viewPortQuad} = ctx.buffers;
     const width = canvas.width;
@@ -169,88 +173,72 @@ const postProcess = function() {
     ctx.useShader(null);
 };
 
-const updateViewMatrix = function () {
-    {
-        const {prevPos, curPos} = mouseInfo;
-        const delta = {
-            x: curPos.x - prevPos.x,
-            y: curPos.y - prevPos.y,
-        };
-        mouseInfo.prevPos = curPos;
-        const rotationScale = Math.PI * 4.0 / Math.max(canvas.width, canvas.height);
-        let mouseRotation;
-        if (mouseInfo.rotZ) {
-            mouseRotation = Matrix4.rotZ(delta.x * rotationScale);
-        } else {
-            mouseRotation = Matrix4.rotY(delta.x * rotationScale).mul(Matrix4.rotX(delta.y * rotationScale));
-        }
-        rotationMatrix = rotationMatrix.mul(mouseRotation);
-    }
-    {
-        zoomLevel += (mouseInfo.curMwheel - mouseInfo.prevMwheel) / -200.0;
-        mouseInfo.prevMwheel = mouseInfo.curMwheel;
-    }
+let counter = 0;
+const updateViewMatrix = () => {
+    rotationMatrix = rotationMatrix.mul(mouseInfo.popRotationDelta());
+    zoomLevel += mouseInfo.popZoomDelta();
     const aspectMatrix = Matrix4.unit().aspect(canvas.width / canvas.height);
     const scale = Math.exp(zoomLevel);
     viewMatrix = rotationMatrix.mul(aspectMatrix).scale(scale);
+
+    //if (counter++ < 60) { return }
+    //counter = 0;
+    //const decomposed = viewMatrix.decompose();
+    //const angles = decomposed.rotation.toEulerAngles();
+    //console.log('matrix decomposition:', decomposed, angles);
 };
 
-const rafLoop = function() {
+const rafLoop = () => {
     updateViewMatrix();
     draw();
-    progress = (progress + 0.001) % 1;
+    // progress = (progress + 0.001) % 1;
     window.requestAnimationFrame(rafLoop);
 };
 
-const mouseInfo = {
-    shiftDown: false,
-    tracking: false,
-    rotZ: false,
-    prevPos: {x: 0, y: 0},
-    curPos: {x: 0, y: 0},
-    prevMwheel: 0,
-    curMwheel: 0,
+const initDrag = (canvas) => {
+    const isFile = (item) => item.kind === 'file';
+    const onDragOver = (event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        if (!Array.prototype.some.call(event.dataTransfer.items, isFile)) {
+            return;
+        }
+        event.dataTransfer.dropEffect = 'copy';
+    };
+
+    const onDragDrop = (event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        if (event.dataTransfer.files.length === 0) {
+            return;
+        }
+        loadFile(event.dataTransfer.files[0]);
+    };
+
+    canvas.addEventListener('dragover', onDragOver);
+    canvas.addEventListener('drop', onDragDrop);
 };
 
-const onMouseMove = (event) => {
-    if (mouseInfo.tracking) {
-        mouseInfo.curPos = {x: event.pageX, y: event.pageY};
-    }
-};
-const onMouseDown = (event) => {
-    mouseInfo.tracking = true;
-    mouseInfo.rotZ = mouseInfo.shiftDown;
-    mouseInfo.curPos = {x: event.pageX, y: event.pageY};
-    mouseInfo.prevPos = {x: event.pageX, y: event.pageY};
-};
-const onMouseUp = (event) => {
-    mouseInfo.tracking = false;
-    mouseInfo.rotZ = false;
-};
-const onMouseWheel = (event) => {
-    event.preventDefault();
-    mouseInfo.curMwheel += event.deltaY;
-};
-const onShiftDown = (event) => {
-    if (event.key !== 'Shift') { return; }
-    mouseInfo.shiftDown = true;
-}
-const onShiftUp = (event) => {
-    if (event.key !== 'Shift') { return; }
-    mouseInfo.shiftDown = false;
-}
-
-const initMouse = function(canvas) {
-    canvas.addEventListener('mousedown', onMouseDown);
-    canvas.addEventListener('wheel', onMouseWheel);
-    window.addEventListener('mouseup', onMouseUp);
-    window.addEventListener('mouseout', onMouseUp);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('keydown', onShiftDown);
-    window.addEventListener('keyup', onShiftUp);
+const initFile = () => {
+    const fileInput = document.getElementById('f');
+    fileInput.addEventListener('change', (event) => {
+        const files = fileInput.files;
+        for (let i = 0; i < files.length; i++) {
+            if (/\.pdb$/i.test(files[i].name)) {
+                loadFile(files[i]);
+                break;
+            }
+        }
+        for (let i = 0; i < files.length; i++) {
+            if (/\.inp$/i.test(files[i].name)) {
+                // loadConfig
+                break;
+            }
+        }
+    });
 };
 
-const init = function() {
+const init = () => {
     const glVersion = getSupportedWebGLVersion();
     console.log('WebGL Version:', glVersion);
     if (glVersion < 1) {
@@ -262,7 +250,7 @@ const init = function() {
     canvas.height = Math.min(window.innerHeight, window.innerWidth);
     ctx = new Context(canvas);
     const {gl} = ctx;
-    ctx.loadShader('progress', progressShader);
+    // ctx.loadShader('progress', progressShader);
     ctx.loadShader('color', colorShader);
     ctx.loadShader('layers', layersShader);
     ctx.loadShader('post-process', postProcessShader);
@@ -278,13 +266,16 @@ const init = function() {
     });
     sphereBuf = makeSphereIndexedVbo(ctx.gl, makeInstanceData());
     console.log('gl initialized:', ctx);
-    rafLoop();
-    initMouse(canvas);
+    mouseInfo = new MouseInput(canvas);
+    initDrag(canvas);
+    initFile();
 
-    loadData();
+    rafLoop();
+
+    loadUrl('2hhb.pdb');
 };
 
-const onProgress = function() {};
+const onProgress = () => {};
 const atomGroups = [
     ['HETATM', '-----HOH--', [0,9999], [0.5,0.5,0.5], 0.0],
     ['ATOM',   '-H--------', [0,9999], [0.5,0.5,0.5], 0.0],
@@ -301,23 +292,23 @@ const atomGroups = [
     ['HETATM', 'FE---HEM--', [0,9999], [1.0,0.8,0.0], 1.8],
     ['HETATM', '-C---HEM--', [0,9999], [1.0,0.3,0.3], 1.6],
     ['HETATM', '-----HEM--', [0,9999], [1.0,0.1,0.1], 1.5],
-//['HETATM', '-H--------', [0,9999], [1.1,1.1,1.1], 0.0],
-//['HETATM', 'H---------', [0,9999], [1.0,1.0,1.0], 0.0],
-//['ATOM',   '-H--------', [0,9999], [1.0,1.0,1.0], 0.0],
-//['ATOM',   'H---------', [0,9999], [1.0,1.0,1.0], 0.0],
-//['HETATM', '-----HOH--', [0,9999], [1.0,1.0,0.0], 0.0],
-//['ATOM',   '-----SER B', [3321,3330], [1.00, 0.00, 0.00], 1.6],
-//['ATOM',   '-----LEU B', [3463,3481], [0.83, 0.62, 0.00], 1.6],
-//['ATOM',   '-----LEU B', [3981,3999], [0.59, 0.83, 0.37], 1.6],
 ].map((group, idx) => {
     const [kind, descriptorStr, [low, high], [r, g, b], radius] = group;
     const descriptor = new RegExp(descriptorStr.replace(/-/g, '.'));
     return {kind, descriptor, idx, index: {low, high}, color: {r,g,b}, radius};
 });
 
-const loadData = async function() {
-    //const data = await loadPdb('5oeb.pdb', onProgress);
-    const data = await loadPdb('2hhb.pdb', onProgress);
+const loadUrl = async (url) => {
+    const data = await loadPdb(url, onProgress);
+    sphereBuf = makeSphereIndexedVbo(ctx.gl, toInstanceData(data));
+};
+
+const loadFile = async (file) => {
+    const data = parsePdb(await file.text());
+    sphereBuf = makeSphereIndexedVbo(ctx.gl, toInstanceData(data));
+};
+
+const toInstanceData = (data) => {
     const count = data.atoms.length;
     const instanceData = new Float32Array(count * IFIELDS);
     const intView = new Uint32Array(instanceData.buffer);
@@ -327,11 +318,11 @@ const loadData = async function() {
         const atom = data.atoms[i];
         const {pos} = atom;
         const group = findAtomGroup(atomGroups, atom);
-        if (!group) { continue }
+        if (!group) { continue; }
         const {radius, color} = group;
         const instance = [
            pos.x, pos.y, pos.z, radius,
-           color.r, color.g, color.b
+           color.r, color.g, color.b,
         ];
         const groupIndex = [i, subunits];
         instanceData.set(instance, i*IFIELDS);
@@ -342,7 +333,7 @@ const loadData = async function() {
         }
         prevChain = atom.chain;
     }
-    sphereBuf = makeSphereIndexedVbo(ctx.gl, instanceData);
+    return instanceData;
 };
 
 window.addEventListener('load', init);

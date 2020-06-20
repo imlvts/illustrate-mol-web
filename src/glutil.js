@@ -155,7 +155,7 @@ export class Context {
         this.instanceExt = this.assertExt('ANGLE_instanced_arrays');
         this.depthExt = this.assertExt('WEBGL_depth_texture');
         // this.drawBuffersExt = gl.getExtension('WEBGL_draw_buffers');
-        // this.floatBufferExt = this.assertExt('WEBGL_color_buffer_float');
+        this.floatBufferExt = this.assertExt('WEBGL_color_buffer_float');
         // required to create and render to float textures
         this.floatTextureExt = this.assertExt('OES_texture_float');
         // required to sample float texture
