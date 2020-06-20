@@ -5,7 +5,7 @@ const xhr = function (url, progress) {
         request.onprogress = progress;
         request.onload = function() {
             if (request.status >= 400) {
-                return reject(`Error loading audio file - ${request.status} ${request.statusText}`);
+                return reject(`Error loading file - ${request.status} ${request.statusText}`);
             }
             resolve(request.response);
         };
@@ -37,8 +37,7 @@ export const findAtomGroup = (groups, atom) => {
     }
 };
 
-export const loadPdb = async (url, progress) => {
-    const data = await xhr(url, progress);
+export const parsePdb = (data) => {
     const atoms = [];
     const re = /^(ATOM|HETATM).*$/gm;
     let row;
@@ -48,3 +47,6 @@ export const loadPdb = async (url, progress) => {
     console.log(atoms[0]);
     return {atoms};
 };
+
+export const loadPdb = async (url, progress) =>
+    parsePdb(await xhr(url, progress));
