@@ -1,33 +1,9 @@
+import vertexShader from './progress.vert.glsl';
+import fragmentShader from './progress.frag.glsl';
+
 export const progressShader = {
-    vertexShader: `
-precision highp float;
-attribute vec2 aPos;
-attribute vec2 aUV;
-varying vec2 vUV;
-void main (void) {
-    gl_Position = vec4(aPos, 1, 1);
-    vUV = aUV;
-}`,
-    fragmentShader: `
-precision highp float;
-uniform float uProgress;
-uniform vec4 uColor;
-// float uProgress = 0.5;
-// vec4 uColor = vec4(0.0, 0.0, 0.0, 1.0);
-varying vec2 vUV;
-float rect(vec2 p, vec2 s) {
-    return max(abs(p.x)-s.x,abs(p.y)-s.y);
-}
-void main (void) {
-    float p = clamp(uProgress, 0.0, 1.0);
-    float hw = 300.0;
-    vec2 size = vec2(800.0, 800.0);
-    vec2 c = size / 2.0;
-    vec2 uv = vUV*size - c;
-    float result = min(rect(uv,vec2(hw+5.,25.)),-rect(uv,vec2(hw+10.,30.)));
-    result = max(result,-rect(uv-vec2(hw*(p-1.0),0.0),vec2(hw*p, 20.0)));
-    gl_FragColor = uColor * clamp(result, 0.0, 1.0);
-}`,
+    vertexShader,
+    fragmentShader,
     uniforms: {
         'uColor': 'uniform4fv',
         'uProgress': 'uniform1f',
