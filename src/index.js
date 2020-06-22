@@ -10,6 +10,7 @@ import {coords, idx} from './sphere-data-hq';
 const sphereCoords = coords;
 const sphereIdx = idx;
 import {loadPdb, parsePdb, findAtomGroup} from './pdb';
+import {parseInp} from './config';
 import {Matrix4} from './matrix';
 
 const IFIELDS = 9;
@@ -209,32 +210,34 @@ const initDrag = (canvas) => {
     const onDragDrop = (event) => {
         event.stopPropagation();
         event.preventDefault();
-        if (event.dataTransfer.files.length === 0) {
-            return;
-        }
-        loadFile(event.dataTransfer.files[0]);
+        processFiles(event.dataTransfer.files);
     };
 
     canvas.addEventListener('dragover', onDragOver);
     canvas.addEventListener('drop', onDragDrop);
 };
 
+const processFiles = (files) => {
+    for (let i = 0; i < files.length; i++) {
+        if (/\.pdb$/i.test(files[i].name)) {
+            console.log('load pdb', files[i]);
+            loadFile(files[i]);
+            break;
+        }
+    }
+    for (let i = 0; i < files.length; i++) {
+        if (/\.inp$/i.test(files[i].name)) {
+            console.log('load inp', files[i]);
+            loadConfig(files[i]);
+            break;
+        }
+    }
+};
+
 const initFile = () => {
     const fileInput = document.getElementById('f');
     fileInput.addEventListener('change', (event) => {
-        const files = fileInput.files;
-        for (let i = 0; i < files.length; i++) {
-            if (/\.pdb$/i.test(files[i].name)) {
-                loadFile(files[i]);
-                break;
-            }
-        }
-        for (let i = 0; i < files.length; i++) {
-            if (/\.inp$/i.test(files[i].name)) {
-                // loadConfig
-                break;
-            }
-        }
+        processFiles(fileInput.files);
     });
 };
 
@@ -307,6 +310,10 @@ const loadFile = async (file) => {
     const data = parsePdb(await file.text());
     sphereBuf = makeSphereIndexedVbo(ctx.gl, toInstanceData(data));
 };
+
+const loadConfig = async(file) => {
+    parseInp(await file.text());
+}
 
 const toInstanceData = (data) => {
     const count = data.atoms.length;

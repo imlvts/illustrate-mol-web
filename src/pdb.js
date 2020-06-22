@@ -44,7 +44,6 @@ export const parsePdb = (data) => {
     while ((row = re.exec(data))) {
         atoms.push(parseAtom(row[0]));
     }
-    console.log(atoms[0]);
     return {atoms};
 };
 
