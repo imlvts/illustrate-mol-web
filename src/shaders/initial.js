@@ -8,13 +8,13 @@ const uniforms = {
 };
 
 export const colorShader = {
-    vertexShader: vertexShader,
+    vertexShader,
     fragmentShader: colorFrag,
     uniforms,
 };
 
 export const layersShader = {
-    vertexShader: vertexShader,
+    vertexShader,
     fragmentShader: layersFrag,
     uniforms,
 };
