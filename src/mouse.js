@@ -61,9 +61,9 @@ export class MouseInput {
     onShiftDown = (event) => {
         if (event.key !== 'Shift') { return; }
         this.shiftDown = true;
-    }
+    };
     onShiftUp = (event) => {
         if (event.key !== 'Shift') { return; }
         this.shiftDown = false;
-    }
+    };
 };
